@@ -1,5 +1,10 @@
 # hometex
-A language that writes latex without writing latex
+A language that writes latex without writing latex.
+
+I'm planning it to *transpiles* to:
+- mainly LaTex
+- maybe Desmos
+- maybe WolframAlpha
 
 # *home* tex?
-This is a domain-specific language specifically designed to do my homework.
+This is a domain-specific language specifically designed to do my math homework.
