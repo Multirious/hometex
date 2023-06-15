@@ -1,4 +1,8 @@
-use nom::{bytes::complete::take_while1, IResult};
+use nom::{
+    bytes::complete::{take_while, take_while1},
+    character::is_digit,
+    IResult,
+};
 use thiserror::Error;
 
 use super::*;
@@ -11,8 +15,11 @@ use super::*;
 #[error("{0} is not a number")]
 struct NotANumberError(String);
 
+fn digits(input: &str) -> IResult<&str, &str> {
+    take_while(|c| is_digit(c as u8))(input)
+}
+
 fn number(input: &str) -> IResult<&str, Number> {
-    let dot_count = 0usize;
-    let (input, output) = take_while1(|c: char| c.is_numeric() || c == '.')(input)?;
-    IResult::Ok((input, Number(output)))
+    // let (input, output) =
+    todo!()
 }
