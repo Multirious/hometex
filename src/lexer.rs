@@ -1,16 +1,33 @@
-use std::{cell::OnceCell, collections::HashMap, sync::OnceLock};
+use std::{cell::OnceCell, collections::HashMap, fmt, sync::OnceLock};
+
+mod parse;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tokens<'a> {
     tokens: Vec<Token<'a>>,
 }
 
+// impl<'a> fmt::Display for Tokens<'a> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+//     }
+// }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token<'a> {
     Identifier(Identifier<'a>),
     Literal(Literal<'a>),
     Operator(Operator),
-    Keyword(Keyword),
+}
+
+impl<'a> fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Identifier(x) => write!(f, "{}", x),
+            Token::Literal(x) => write!(f, "{}", x),
+            Token::Operator(x) => write!(f, "{}", x),
+        }
+    }
 }
 
 macro_rules! operators {
@@ -103,118 +120,74 @@ pub struct Identifier<'a> {
     str: &'a str,
 }
 
+impl<'a> fmt::Display for Identifier<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.str)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Literal<'a> {
     Integer(Integer<'a>),
     Float(Float<'a>),
-    // String(String<'a>),
+    String(String<'a>),
 }
 
+impl<'a> fmt::Display for Literal<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Literal::Integer(x) => write!(f, "{}", x),
+            Literal::Float(x) => write!(f, "{}", x),
+            Literal::String(x) => write!(f, "{}", x),
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Integer<'a> {
     str: &'a str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Float<'a> {
-    pre_dot: Integer<'a>,
-    post_dot: Integer<'a>,
+impl<'a> fmt::Display for Integer<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.str)
+    }
 }
 
-// pub struct String<'a> {
-//     str: &'a str,
-// }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Float<'a> {
+    left_from_dot: Integer<'a>,
+    right_from_dot: Integer<'a>,
+}
+
+impl<'a> fmt::Display for Float<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.left_from_dot.str, self.right_from_dot)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Keyword {}
+pub struct String<'a> {
+    str: &'a str,
+}
+impl<'a> fmt::Display for String<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.str)
+    }
+}
 
-pub use parse::parse;
+pub fn parse(str: &str) -> Result<Tokens, nom::Err<nom::error::Error<&str>>> {
+    match parse::tokens(str) {
+        Ok((_, tokens)) => Ok(tokens),
+        Err(e) => Err(e),
+    }
+}
 
-mod parse {
-    use nom::{
-        branch::alt,
-        bytes::complete::take,
-        bytes::complete::{take_while, take_while1},
-        character::is_alphabetic,
-        combinator::{map, verify},
-        error::{Error as NomError, ErrorKind as NomErrorKind},
-        sequence::tuple,
-        Err as ErrorCase, IResult,
-    };
-
+#[cfg(test)]
+mod test {
     use super::*;
 
-    pub fn parse(str: &str) -> Result<Tokens<'_>, ()> {
-        todo!()
-    }
-
-    fn operator(input: &str) -> IResult<&str, Operator> {
-        // NOTE: potentially slow and invalid code with longer operator
-        let (input, output) = take(1usize)(input)?;
-        match Operator::recognize(output) {
-            Some(operator) => Ok((input, operator)),
-            None => Err(ErrorCase::Error(NomError::new(input, NomErrorKind::Verify))),
-        }
-    }
-
-    fn identifier(input: &str) -> IResult<&str, Identifier<'_>> {
-        let first_char_not_digit = |s: &str| {
-            let first_char = s.as_bytes()[0] as char;
-            !first_char.is_ascii_digit()
-        };
-        let char_alphanumeric_or_underscore = |c: char| c.is_ascii_alphanumeric() || c == '_';
-        map(
-            verify(
-                take_while(char_alphanumeric_or_underscore),
-                first_char_not_digit,
-            ),
-            |str: &str| Identifier { str },
-        )(input)
-    }
-
-    fn literal(input: &str) -> IResult<&str, Literal<'_>> {
-        let integer = map(integer, Literal::Integer);
-        let float = map(float, Literal::Float);
-        alt((float, integer))(input)
-    }
-
-    fn integer(input: &str) -> IResult<&str, Integer<'_>> {
-        map(take_while1(|c: char| c.is_ascii_digit()), |str: &str| {
-            Integer { str }
-        })(input)
-    }
-
-    fn float(input: &str) -> IResult<&str, Float<'_>> {
-        let pre_dot = integer;
-        let post_dot = integer;
-        let dot = verify(take(1usize), |s: &str| s.as_bytes()[0] == b'.');
-        map(
-            tuple((pre_dot, dot, post_dot)),
-            |(pre_dot, _, post_dot): (Integer, &str, Integer)| Float { pre_dot, post_dot },
-        )(input)
-    }
-
-    #[cfg(test)]
-    mod test {
-        use super::*;
-
-        #[test]
-        fn test_identifier() {
-            assert_eq!(
-                identifier("hello guys"),
-                Ok((" guys", Identifier { str: "hello" }))
-            );
-            assert_eq!(
-                identifier("_he_ll23o_ guys"),
-                Ok((" guys", Identifier { str: "_he_ll23o_" }))
-            );
-            assert_eq!(
-                identifier("2mama_sd guys"),
-                Err(ErrorCase::Error(NomError::new(
-                    "2mama_sd guys",
-                    NomErrorKind::Verify
-                )))
-            );
-        }
+    #[test]
+    fn test_lexer() {
+        let result = parse("");
     }
 }
