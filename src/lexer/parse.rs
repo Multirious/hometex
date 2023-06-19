@@ -14,14 +14,18 @@ use super::*;
 pub fn tokens(input: &str) -> IResult<&str, Tokens<'_>> {
     // NOTE: potentially slow because double loop
     let token = map(token, |token| Some(token));
-    let space = map(space, |_| None);
-    map(many0(alt((token, space))), |tokens| Tokens {
-        tokens: tokens.into_iter().flatten().collect(),
-    })(input)
+    let white_space = map(white_space, |_| None);
+    let (input, output) = many0(alt((token, white_space)))(input)?;
+    Ok((
+        input,
+        Tokens {
+            tokens: output.into_iter().flatten().collect(),
+        },
+    ))
 }
 
-fn space(input: &str) -> IResult<&str, &str> {
-    verify(take(1usize), |s: &str| s == " ")(input)
+fn white_space(input: &str) -> IResult<&str, &str> {
+    take_while1(|c: char| matches!(c, ' ' | '\t' | '\r' | '\n'))(input)
 }
 
 fn token(input: &str) -> IResult<&str, Token<'_>> {
@@ -48,7 +52,7 @@ fn identifier(input: &str) -> IResult<&str, Identifier<'_>> {
     let char_alphanumeric_or_underscore = |c: char| c.is_ascii_alphanumeric() || c == '_';
     map(
         verify(
-            take_while(char_alphanumeric_or_underscore),
+            take_while1(char_alphanumeric_or_underscore),
             first_char_not_digit,
         ),
         |str: &str| Identifier { str },
@@ -56,24 +60,24 @@ fn identifier(input: &str) -> IResult<&str, Identifier<'_>> {
 }
 
 fn literal(input: &str) -> IResult<&str, Literal<'_>> {
-    let integer = map(integer, Literal::Integer);
+    let integer = map(digits, Literal::Digits);
     let float = map(float, Literal::Float);
     alt((float, integer))(input)
 }
 
-fn integer(input: &str) -> IResult<&str, Integer<'_>> {
+fn digits(input: &str) -> IResult<&str, Digits<'_>> {
     map(take_while1(|c: char| c.is_ascii_digit()), |str: &str| {
-        Integer { str }
+        Digits { str }
     })(input)
 }
 
 fn float(input: &str) -> IResult<&str, Float<'_>> {
-    let pre_dot = integer;
-    let post_dot = integer;
+    let pre_dot = digits;
+    let post_dot = digits;
     let dot = verify(take(1usize), |s: &str| s == ".");
     map(
         tuple((pre_dot, dot, post_dot)),
-        |(pre_dot, _, post_dot): (Integer, &str, Integer)| Float {
+        |(pre_dot, _, post_dot): (Digits, &str, Digits)| Float {
             left_from_dot: pre_dot,
             right_from_dot: post_dot,
         },
@@ -110,8 +114,8 @@ mod test {
             Ok((
                 " yaya",
                 Float {
-                    left_from_dot: Integer { str: "23" },
-                    right_from_dot: Integer { str: "13" }
+                    left_from_dot: Digits { str: "23" },
+                    right_from_dot: Digits { str: "13" }
                 }
             ))
         );
@@ -125,7 +129,7 @@ mod test {
         assert_eq!(
             identifier("34. haha"),
             Err(ErrorCase::Error(NomError::new(
-                "haha",
+                "34. haha",
                 NomErrorKind::Verify
             )))
         );

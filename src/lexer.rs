@@ -1,26 +1,60 @@
-use std::{cell::OnceCell, collections::HashMap, fmt, sync::OnceLock};
+use std::{cell::OnceCell, collections::HashMap, fmt, ops, slice, sync::OnceLock};
 
 mod parse;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tokens<'a> {
-    tokens: Vec<Token<'a>>,
+pub struct Tokens<'src> {
+    tokens: Vec<Token<'src>>,
 }
 
-// impl<'a> fmt::Display for Tokens<'a> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'src, I> ops::Index<I> for Tokens<'src>
+where
+    I: slice::SliceIndex<[Token<'src>]>,
+{
+    type Output = I::Output;
 
-//     }
-// }
+    fn index(&self, index: I) -> &Self::Output {
+        &self.tokens[index]
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TokensSlice<'src> {
+    tokens_slice: [Token<'src>],
+}
+
+impl<'src> fmt::Display for Tokens<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "[")?;
+        for token in &self.tokens {
+            writeln!(f, "  {},", token)?;
+        }
+        writeln!(f, "]")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Token<'a> {
-    Identifier(Identifier<'a>),
-    Literal(Literal<'a>),
+pub enum Token<'src> {
+    Identifier(Identifier<'src>),
+    Literal(Literal<'src>),
     Operator(Operator),
 }
 
-impl<'a> fmt::Display for Token<'a> {
+impl<'src> Token<'src> {
+    pub fn is_identifer(&self) -> bool {
+        matches!(self, Token::Identifier(_))
+    }
+
+    pub fn is_literal(&self) -> bool {
+        matches!(self, Token::Literal(_))
+    }
+
+    pub fn is_operator(&self) -> bool {
+        matches!(self, Token::Operator(_))
+    }
+}
+
+impl<'src> fmt::Display for Token<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Identifier(x) => write!(f, "{}", x),
@@ -114,62 +148,74 @@ impl Operator {
     }
 }
 
-/// String of ascii lowercase, uppercase alphabet, underscore, or number. Cannot start with number
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier<'a> {
-    str: &'a str,
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.value())
+    }
 }
 
-impl<'a> fmt::Display for Identifier<'a> {
+/// String of ascii lowercase, uppercase alphabet, underscore, or number. Cannot start with number
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Identifier<'src> {
+    str: &'src str,
+}
+
+impl<'src> fmt::Display for Identifier<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\"{}\"", self.str)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Literal<'a> {
-    Integer(Integer<'a>),
-    Float(Float<'a>),
-    String(String<'a>),
+pub enum Literal<'src> {
+    Digits(Digits<'src>),
+    Float(Float<'src>),
+    String(String<'src>),
 }
 
-impl<'a> fmt::Display for Literal<'a> {
+impl<'src> fmt::Display for Literal<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Literal::Integer(x) => write!(f, "{}", x),
+            Literal::Digits(x) => write!(f, "{}", x),
             Literal::Float(x) => write!(f, "{}", x),
             Literal::String(x) => write!(f, "{}", x),
         }
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Integer<'a> {
-    str: &'a str,
+pub struct Digits<'src> {
+    str: &'src str,
 }
 
-impl<'a> fmt::Display for Integer<'a> {
+impl<'src> Digits<'src> {
+    pub fn to_u32(&self) -> u32 {
+        self.str.parse().unwrap()
+    }
+}
+
+impl<'src> fmt::Display for Digits<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.str)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Float<'a> {
-    left_from_dot: Integer<'a>,
-    right_from_dot: Integer<'a>,
+pub struct Float<'src> {
+    left_from_dot: Digits<'src>,
+    right_from_dot: Digits<'src>,
 }
 
-impl<'a> fmt::Display for Float<'a> {
+impl<'src> fmt::Display for Float<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.left_from_dot.str, self.right_from_dot)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct String<'a> {
-    str: &'a str,
+pub struct String<'src> {
+    str: &'src str,
 }
-impl<'a> fmt::Display for String<'a> {
+impl<'src> fmt::Display for String<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\"{}\"", self.str)
     }
@@ -188,6 +234,7 @@ mod test {
 
     #[test]
     fn test_lexer() {
-        let result = parse("");
+        let result = parse("std(hello(23,23.8), 2398)").unwrap();
+        panic!("{result}");
     }
 }
