@@ -18,11 +18,6 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TokensSlice<'src> {
-    tokens_slice: [Token<'src>],
-}
-
 impl<'src> fmt::Display for Tokens<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "[")?;
@@ -188,7 +183,7 @@ pub struct Digits<'src> {
 }
 
 impl<'src> Digits<'src> {
-    pub fn to_u32(&self) -> u32 {
+    pub fn to_u64(&self) -> u64 {
         self.str.parse().unwrap()
     }
 }

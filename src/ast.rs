@@ -7,22 +7,22 @@ pub struct Ast<'src> {
 /// Thing that gives a value
 pub enum Expression<'src> {
     Value(Value),
-    Function(Function<'src>),
+    FunctionCall(FunctionCall<'src>),
 }
 
 pub enum Value {
-    Integer(Integer),
+    Whole(Whole),
     Float(Float),
 }
 
-pub struct Integer(u32);
-pub struct Float(i64);
+pub struct Whole(u64);
+pub struct Float(f64);
 
 pub struct Variable<'src> {
     identifier: Identifier<'src>,
 }
 
-pub struct Function<'src> {
+pub struct FunctionCall<'src> {
     identifier: Identifier<'src>,
     inputs: Vec<Expression<'src>>,
 }
