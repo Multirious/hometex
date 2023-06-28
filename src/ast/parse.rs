@@ -1,148 +1,144 @@
-use super::*;
-use crate::lexer::{Literal, Operator::*, Token};
+use super::{Literal as AstLiteral, *};
+use crate::lexer::{Literal as LexLiteral, Operator::*, Token};
 use nom_reinvented::*;
 
 type TS<'a, 'src> = &'a [Token<'src>];
 
-mod nom_reinvented {
-    use crate::lexer::Token;
-
-    use super::TS;
-
-    pub type IResult<I, O> = std::result::Result<(I, O), ()>;
-
-    pub fn take<T>(at: usize) -> impl Fn(&[T]) -> IResult<&[T], &[T]> {
-        move |input| {
-            if at > input.len() {
-                Err(())
-            } else {
-                let (splitted_segment, the_rest) = input.split_at(at);
-                Ok((the_rest, splitted_segment))
-            }
-        }
-    }
-
-    pub fn try_map<T, P, F, U>(parser: P, mapper: F) -> impl Fn(&[T]) -> IResult<&[T], U>
-    where
-        P: Fn(&[T]) -> IResult<&[T], &[T]>,
-        F: Fn(&[T]) -> Option<U>,
-    {
-        move |input| {
-            let (i, o) = parser(input)?;
-            match mapper(o) {
-                Some(o) => Ok((i, o)),
-                None => Err(()),
-            }
-        }
-    }
-
-    pub fn map<T, P, PO, F, U>(parser: P, mapper: F) -> impl Fn(&[T]) -> IResult<&[T], U>
-    where
-        P: Fn(&[T]) -> IResult<&[T], PO>,
-        F: Fn(PO) -> U,
-    {
-        move |input| {
-            let (i, o) = parser(input)?;
-            Ok((i, mapper(o)))
-        }
-    }
-
-    pub fn between_leveled<T>(
-        the_left: &[T],
-        the_right: &[T],
-    ) -> impl Fn(&[T]) -> IResult<&[T], &[T]>
-    where
-        T: Clone + std::cmp::PartialEq,
-    {
-        let the_left = the_left.to_vec();
-        let the_right = the_right.to_vec();
-        move |input| {
-            let left_size = the_left.len();
-            let (input, left) = take(left_size)(input)?;
-            if left == the_left {
-                return Err(());
-            }
-
-            let right_size = the_right.len();
-            let mut depth = 0isize;
-            let mut completed = false;
-            let mut i = 0usize;
-            loop {
-                let the_left_range = i..(i + left_size);
-                let is_the_left = match input.get(the_left_range) {
-                    Some(ts) => ts == the_left,
-                    None => false,
-                };
-                if is_the_left {
-                    depth += 1;
-                    continue;
-                }
-                let the_right_range = i..(i + right_size);
-                let is_the_right = match input.get(the_right_range) {
-                    Some(ts) => ts == the_right,
-                    None => false,
-                };
-                if is_the_right && depth > 0 {
-                    depth -= 1;
-                }
-                if is_the_right && depth == 0 {
-                    completed = true;
-                    break;
-                }
-                i += 1;
-                if i == input.len() {
-                    break;
-                }
-            }
-            if completed {
-                let (indeed_in_between_and_leveled, rest) = input.split_at(i);
-                Ok((rest, indeed_in_between_and_leveled))
-            } else {
-                Err(())
-            }
-        }
-    }
-}
-
-use nom_reinvented::take;
+mod nom_reinvented;
+#[cfg(test)]
+mod test;
 
 pub fn ast<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Ast<'src>> {
     todo!()
 }
 
 fn expression<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Expression<'src>> {
-    let value = map(value, Expression::Value);
+    let literal = map(literal, Expression::Literal);
     let function_call = map(function_call, Expression::FunctionCall);
-    value(input)
+    if let Ok(o) = literal(input) {
+        return Ok(o);
+    }
+    match function_call(input) {
+        Ok(o) => Ok(o),
+        Err(e) => Err(e),
+    }
 }
 
-fn value<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Value> {
-    let whole = map(whole, Value::Whole);
-    whole(input)
+fn literal<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Literal> {
+    let whole = map(whole, AstLiteral::Whole);
+    let float = map(float, AstLiteral::Float);
+    if let Ok(o) = whole(input) {
+        return Ok(o);
+    }
+    if let Ok(o) = float(input) {
+        Ok(o)
+    } else {
+        Err(Error::with_msg(input, "whole or float in literal"))
+    }
 }
 
 fn whole<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Whole> {
     let (input, digits) = take(1)(input)?;
-    let &[Token::Literal(Literal::Digits(digits))] = digits else {
-        return Err(());
+    let &[Token::Literal(LexLiteral::Digits(digits))] = digits else {
+        return Err(Error::with_msg(input, "whole"));
     };
     Ok((input, Whole(digits.to_u64())))
 }
 
-fn function_call<'src, 'a>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, FunctionCall<'src>> {
-    let (input, ident) = take(1)(input)?;
-    let &[
-        Token::Identifier(ident),
-    ] = ident else {
-        return Err(())
+fn float<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Float> {
+    let (input, float) = take(1)(input)?;
+    let &[Token::Literal(LexLiteral::Float(float))] = float else {
+        return Err(Error::with_msg(input, "float"));
     };
-    let inputs = function_inputs(input)?;
-    todo!()
+    Ok((input, Float(float.to_f64())))
 }
 
-fn function_inputs<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Vec<Expression<'src>>> {
-    let left_bracket = &[Token::Operator(LeftRoundBracket)];
-    let right_bracket = &[Token::Operator(RightRoundBracket)];
-    let (input, function_inputs) = between_leveled(left_bracket, right_bracket)(input)?;
-    todo!()
+fn function_call<'src, 'a>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, FunctionCall<'src>> {
+    let (input, identifier) = take(1)(input)?;
+    let &[
+        Token::Identifier(ident),
+    ] = identifier else {
+        return Err(Error::with_msg(input, "function call"))
+    };
+    let identifier = Identifier { text: ident.str() };
+    let (input, function_call_inputs) = function_call_inputs(input)?;
+    Ok((
+        input,
+        FunctionCall {
+            identifier,
+            inputs: function_call_inputs,
+        },
+    ))
+}
+
+fn function_call_inputs<'a, 'src>(
+    input: TS<'a, 'src>,
+) -> IResult<TS<'a, 'src>, Vec<Expression<'src>>> {
+    expressions_in_round_bracket_seperated_by_comma(input)
+}
+
+fn expressions_in_round_bracket_seperated_by_comma<'a, 'src>(
+    input: TS<'a, 'src>,
+) -> IResult<TS<'a, 'src>, Vec<Expression<'src>>> {
+    let left_bracket = Token::Operator(LeftRoundBracket);
+    let right_bracket = Token::Operator(RightRoundBracket);
+    let comma = Token::Operator(Comma);
+    surround_seperated_items_allowed_trailing(
+        expression,
+        tag(&[comma]),
+        tag(&[left_bracket]),
+        tag(&[right_bracket]),
+    )(input)
+}
+
+fn surround_seperated_items_allowed_trailing<T, I, IP, SP, EP, BP>(
+    item_parser: IP,
+    seperator: SP,
+    begin: EP,
+    end: BP,
+) -> impl Fn(&[T]) -> IResult<&[T], Vec<I>>
+where
+    IP: Fn(&[T]) -> IResult<&[T], I>,
+    SP: Fn(&[T]) -> IResult<&[T], &[T]>,
+    BP: Fn(&[T]) -> IResult<&[T], &[T]>,
+    EP: Fn(&[T]) -> IResult<&[T], &[T]>,
+{
+    move |input| {
+        let mut vec = vec![];
+        let (input, _) = begin(input)?;
+        let mut l_input = input;
+        loop {
+            let input = l_input;
+
+            let (input, output) = item_parser(input)?;
+            vec.push(output);
+
+            let (input, is_seperator) = if let Ok((input, _)) = seperator(input) {
+                (input, true)
+            } else {
+                (input, false)
+            };
+            let (input, is_end) = if let Ok((input, _)) = end(input) {
+                (input, true)
+            } else {
+                (input, false)
+            };
+
+            l_input = input;
+
+            match (is_seperator, is_end) {
+                (true, false) => continue,
+                (false, true) => break,
+                (false, false) => {
+                    return Err(Error::with_msg(
+                        input,
+                        "surround_seperated_items_allowed_trailing",
+                    ))
+                }
+                (true, true) => break,
+            }
+        }
+
+        Ok((l_input, vec))
+    }
 }

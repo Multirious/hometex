@@ -1,6 +1,13 @@
-use std::{cell::OnceCell, collections::HashMap, fmt, ops, slice, sync::OnceLock};
+use std::{collections::HashMap, fmt, ops, slice, sync::OnceLock};
 
 mod parse;
+
+pub fn parse(str: &str) -> Result<Tokens, nom::Err<nom::error::Error<&str>>> {
+    match parse::tokens(str) {
+        Ok((_, tokens)) => Ok(tokens),
+        Err(e) => Err(e),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tokens<'src> {
@@ -25,6 +32,18 @@ impl<'src> fmt::Display for Tokens<'src> {
             writeln!(f, "  {},", token)?;
         }
         writeln!(f, "]")
+    }
+}
+
+impl<'src> AsRef<[Token<'src>]> for Tokens<'src> {
+    fn as_ref(&self) -> &[Token<'src>] {
+        &self.tokens
+    }
+}
+
+impl<'src> Tokens<'src> {
+    pub fn as_slice(&self) -> &[Token<'src>] {
+        &self.tokens
     }
 }
 
@@ -139,7 +158,7 @@ impl Operator {
     }
 
     pub fn recognize(str: &str) -> Option<Operator> {
-        Operator::map().get(str).map(|v| *v)
+        Operator::map().get(str).copied()
     }
 }
 
@@ -152,7 +171,13 @@ impl fmt::Display for Operator {
 /// String of ascii lowercase, uppercase alphabet, underscore, or number. Cannot start with number
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier<'src> {
-    str: &'src str,
+    pub str: &'src str,
+}
+
+impl<'src> Identifier<'src> {
+    pub fn str(&self) -> &'src str {
+        self.str
+    }
 }
 
 impl<'src> fmt::Display for Identifier<'src> {
@@ -196,13 +221,21 @@ impl<'src> fmt::Display for Digits<'src> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Float<'src> {
-    left_from_dot: Digits<'src>,
-    right_from_dot: Digits<'src>,
+    left_to_dot: Digits<'src>,
+    right_to_dot: Digits<'src>,
+}
+
+impl<'src> Float<'src> {
+    pub fn to_f64(&self) -> f64 {
+        format!("{}.{}", self.left_to_dot, self.right_to_dot)
+            .parse()
+            .unwrap()
+    }
 }
 
 impl<'src> fmt::Display for Float<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", self.left_from_dot.str, self.right_from_dot)
+        write!(f, "{}.{}", self.left_to_dot.str, self.right_to_dot)
     }
 }
 
@@ -213,13 +246,6 @@ pub struct String<'src> {
 impl<'src> fmt::Display for String<'src> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\"{}\"", self.str)
-    }
-}
-
-pub fn parse(str: &str) -> Result<Tokens, nom::Err<nom::error::Error<&str>>> {
-    match parse::tokens(str) {
-        Ok((_, tokens)) => Ok(tokens),
-        Err(e) => Err(e),
     }
 }
 

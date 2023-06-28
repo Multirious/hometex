@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::take,
-    bytes::complete::{take_while, take_while1},
+    bytes::complete::take_while1,
     combinator::{map, verify},
     error::{Error as NomError, ErrorKind as NomErrorKind},
     multi::many0,
@@ -10,6 +10,9 @@ use nom::{
 };
 
 use super::*;
+
+#[cfg(test)]
+mod test;
 
 pub fn tokens(input: &str) -> IResult<&str, Tokens<'_>> {
     // NOTE: potentially slow because double loop
@@ -78,60 +81,8 @@ fn float(input: &str) -> IResult<&str, Float<'_>> {
     map(
         tuple((pre_dot, dot, post_dot)),
         |(pre_dot, _, post_dot): (Digits, &str, Digits)| Float {
-            left_from_dot: pre_dot,
-            right_from_dot: post_dot,
+            left_to_dot: pre_dot,
+            right_to_dot: post_dot,
         },
     )(input)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_identifier() {
-        assert_eq!(
-            identifier("hello guys"),
-            Ok((" guys", Identifier { str: "hello" }))
-        );
-        assert_eq!(
-            identifier("_he_ll23o_ guys"),
-            Ok((" guys", Identifier { str: "_he_ll23o_" }))
-        );
-        assert_eq!(
-            identifier("2mama_sd guys"),
-            Err(ErrorCase::Error(NomError::new(
-                "2mama_sd guys",
-                NomErrorKind::Verify
-            )))
-        );
-    }
-
-    #[test]
-    fn test_float() {
-        assert_eq!(
-            float("23.13 yaya"),
-            Ok((
-                " yaya",
-                Float {
-                    left_from_dot: Digits { str: "23" },
-                    right_from_dot: Digits { str: "13" }
-                }
-            ))
-        );
-        assert_eq!(
-            float(".13 no"),
-            Err(ErrorCase::Error(NomError::new(
-                ".13 no",
-                NomErrorKind::TakeWhile1
-            )))
-        );
-        assert_eq!(
-            identifier("34. haha"),
-            Err(ErrorCase::Error(NomError::new(
-                "34. haha",
-                NomErrorKind::Verify
-            )))
-        );
-    }
 }
