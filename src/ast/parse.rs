@@ -1,8 +1,9 @@
-use super::{Literal as AstLiteral, *};
-use crate::lexer::{Literal as LexLiteral, Operator::*, Token};
+use super::{Literal, *};
+use crate::lexer;
+use anyhow::{anyhow, bail, Context};
 use nom_reinvented::*;
 
-type TS<'a, 'src> = &'a [Token<'src>];
+type TS<'a, 'src> = &'a [lexer::Token<'src>];
 
 mod nom_reinvented;
 #[cfg(test)]
@@ -12,55 +13,73 @@ pub fn ast<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Ast<'src>> {
     todo!()
 }
 
+fn tag_tokens_kind(
+    kind: &[lexer::TokenKind],
+) -> impl for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, TS<'a, 'src>> {
+    let kind = kind.to_vec();
+    move |input| {
+        let (input, tokens) = take(kind.len())(input)?;
+        for (expected_kind, token) in kind.iter().zip(tokens) {
+            if token.kind != *expected_kind {
+                return Err(anyhow!(Error::new(input))).with_context(|| "tag");
+            }
+        }
+        Ok((input, tokens))
+    }
+}
+
 fn expression<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Expression<'src>> {
     let literal = map(literal, Expression::Literal);
     let function_call = map(function_call, Expression::FunctionCall);
     if let Ok(o) = literal(input) {
         return Ok(o);
     }
-    match function_call(input) {
-        Ok(o) => Ok(o),
-        Err(e) => Err(e),
+    if let Ok(o) = function_call(input) {
+        return Ok(o);
     }
+    Err(anyhow!(Error::new(input)))
+        .with_context(|| "expression expecting literal, or functiona call")
 }
 
 fn literal<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Literal> {
-    let whole = map(whole, AstLiteral::Whole);
-    let float = map(float, AstLiteral::Float);
+    let whole = map(whole, Literal::Whole);
+    let float = map(float, Literal::Float);
     if let Ok(o) = whole(input) {
         return Ok(o);
     }
     if let Ok(o) = float(input) {
-        Ok(o)
-    } else {
-        Err(Error::with_msg(input, "whole or float in literal"))
+        return Ok(o);
     }
+
+    Err(anyhow!(Error::new(input)))
+        .with_context(|| "literal expecting whole number, or floating-point number")
 }
 
 fn whole<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Whole> {
-    let (input, digits) = take(1)(input)?;
-    let &[Token::Literal(LexLiteral::Digits(digits))] = digits else {
-        return Err(Error::with_msg(input, "whole"));
-    };
-    Ok((input, Whole(digits.to_u64())))
+    let digits_kind = lexer::TokenKind::Literal(lexer::Literal::Digits);
+    let (input, digits) = tag_tokens_kind(&[digits_kind])(input)?;
+    Ok((input, Whole(digits[0].fragment.parse().unwrap())))
 }
 
 fn float<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Float> {
-    let (input, float) = take(1)(input)?;
-    let &[Token::Literal(LexLiteral::Float(float))] = float else {
-        return Err(Error::with_msg(input, "float"));
-    };
-    Ok((input, Float(float.to_f64())))
+    let float_kind = lexer::TokenKind::Literal(lexer::Literal::Float);
+    let (input, float) = tag_tokens_kind(&[float_kind])(input)?;
+    Ok((input, Float(float[0].fragment.parse().unwrap())))
+}
+
+fn identifier<'a, 'src>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, Identifier<'src>> {
+    let identifier_kind = lexer::TokenKind::Identifier;
+    let (input, identifier) = tag_tokens_kind(&[identifier_kind])(input)?;
+    Ok((
+        input,
+        Identifier {
+            text: identifier[0].fragment,
+        },
+    ))
 }
 
 fn function_call<'src, 'a>(input: TS<'a, 'src>) -> IResult<TS<'a, 'src>, FunctionCall<'src>> {
-    let (input, identifier) = take(1)(input)?;
-    let &[
-        Token::Identifier(ident),
-    ] = identifier else {
-        return Err(Error::with_msg(input, "function call"))
-    };
-    let identifier = Identifier { text: ident.str() };
+    let (input, identifier) = identifier(input)?;
     let (input, function_call_inputs) = function_call_inputs(input)?;
     Ok((
         input,
@@ -80,9 +99,9 @@ fn function_call_inputs<'a, 'src>(
 fn expressions_in_round_bracket_seperated_by_comma<'a, 'src>(
     input: TS<'a, 'src>,
 ) -> IResult<TS<'a, 'src>, Vec<Expression<'src>>> {
-    let left_bracket = Token::Operator(LeftRoundBracket);
-    let right_bracket = Token::Operator(RightRoundBracket);
-    let comma = Token::Operator(Comma);
+    let left_bracket = lexer::TokenKind::Operator(lexer::Operator::LeftRoundBracket);
+    let right_bracket = lexer::TokenKind::Operator(lexer::Operator::RightRoundBracket);
+    let comma = lexer::TokenKind::Operator(lexer::Operator::Comma);
     surround_seperated_items_allowed_trailing(
         expression,
         tag(&[comma]),
@@ -91,17 +110,17 @@ fn expressions_in_round_bracket_seperated_by_comma<'a, 'src>(
     )(input)
 }
 
-fn surround_seperated_items_allowed_trailing<T, I, IP, SP, EP, BP>(
+fn surround_seperated_items_allowed_trailing<I, IP, SP, EP, BP>(
     item_parser: IP,
     seperator: SP,
     begin: EP,
     end: BP,
-) -> impl Fn(&[T]) -> IResult<&[T], Vec<I>>
+) -> impl for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, Vec<I>>
 where
-    IP: Fn(&[T]) -> IResult<&[T], I>,
-    SP: Fn(&[T]) -> IResult<&[T], &[T]>,
-    BP: Fn(&[T]) -> IResult<&[T], &[T]>,
-    EP: Fn(&[T]) -> IResult<&[T], &[T]>,
+    IP: for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, I>,
+    SP: for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, TS<'a, 'src>>,
+    BP: for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, TS<'a, 'src>>,
+    EP: for<'a, 'src> Fn(TS<'a, 'src>) -> IResult<TS<'a, 'src>, TS<'a, 'src>>,
 {
     move |input| {
         let mut vec = vec![];
@@ -130,10 +149,8 @@ where
                 (true, false) => continue,
                 (false, true) => break,
                 (false, false) => {
-                    return Err(Error::with_msg(
-                        input,
-                        "surround_seperated_items_allowed_trailing",
-                    ))
+                    return Err(anyhow!(Error::new(input)))
+                        .with_context(|| "surround_seperated_items_allowed_trailing");
                 }
                 (true, true) => break,
             }

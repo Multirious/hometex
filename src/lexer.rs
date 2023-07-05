@@ -25,15 +25,15 @@ where
     }
 }
 
-impl<'src> fmt::Display for Tokens<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[")?;
-        for token in &self.tokens {
-            writeln!(f, "  {},", token)?;
-        }
-        writeln!(f, "]")
-    }
-}
+// impl<'src> fmt::Display for Tokens<'src> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         writeln!(f, "[")?;
+//         for token in &self.tokens {
+//             writeln!(f, "  {},", token)?;
+//         }
+//         writeln!(f, "]")
+//     }
+// }
 
 impl<'src> AsRef<[Token<'src>]> for Tokens<'src> {
     fn as_ref(&self) -> &[Token<'src>] {
@@ -48,34 +48,43 @@ impl<'src> Tokens<'src> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Token<'src> {
-    Identifier(Identifier<'src>),
-    Literal(Literal<'src>),
-    Operator(Operator),
+pub struct Token<'src> {
+    pub fragment: &'src str,
+    pub kind: TokenKind,
 }
 
 impl<'src> Token<'src> {
-    pub fn is_identifer(&self) -> bool {
-        matches!(self, Token::Identifier(_))
+    pub fn new(fragment: &'src str, kind: TokenKind) -> Token<'src> {
+        Token { fragment, kind }
     }
 
-    pub fn is_literal(&self) -> bool {
-        matches!(self, Token::Literal(_))
-    }
-
-    pub fn is_operator(&self) -> bool {
-        matches!(self, Token::Operator(_))
+    pub fn fragment_if_kind(&self, kind: TokenKind) -> Option<&'src str> {
+        if self.kind == kind {
+            Some(self.fragment)
+        } else {
+            None
+        }
     }
 }
 
-impl<'src> fmt::Display for Token<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Token::Identifier(x) => write!(f, "{}", x),
-            Token::Literal(x) => write!(f, "{}", x),
-            Token::Operator(x) => write!(f, "{}", x),
-        }
-    }
+// impl<'src> fmt::Display for Token<'src> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Token::Identifier(x) => write!(f, "{}", x),
+//             Token::Literal(x) => write!(f, "{}", x),
+//             Token::Operator(x) => write!(f, "{}", x),
+//         }
+//     }
+// }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TokenKind {
+    /// String of ascii lowercase, uppercase alphabet, underscore, or number. Cannot start with number
+    Identifier,
+    Literal(Literal),
+    Operator(Operator),
+    WhiteSpace(WhiteSpace),
+    Invalid,
 }
 
 macro_rules! operators {
@@ -168,85 +177,18 @@ impl fmt::Display for Operator {
     }
 }
 
-/// String of ascii lowercase, uppercase alphabet, underscore, or number. Cannot start with number
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier<'src> {
-    pub str: &'src str,
-}
-
-impl<'src> Identifier<'src> {
-    pub fn str(&self) -> &'src str {
-        self.str
-    }
-}
-
-impl<'src> fmt::Display for Identifier<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}\"", self.str)
-    }
+pub enum Literal {
+    Digits,
+    Float,
+    String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Literal<'src> {
-    Digits(Digits<'src>),
-    Float(Float<'src>),
-    String(String<'src>),
-}
-
-impl<'src> fmt::Display for Literal<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Literal::Digits(x) => write!(f, "{}", x),
-            Literal::Float(x) => write!(f, "{}", x),
-            Literal::String(x) => write!(f, "{}", x),
-        }
-    }
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Digits<'src> {
-    str: &'src str,
-}
-
-impl<'src> Digits<'src> {
-    pub fn to_u64(&self) -> u64 {
-        self.str.parse().unwrap()
-    }
-}
-
-impl<'src> fmt::Display for Digits<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.str)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Float<'src> {
-    left_to_dot: Digits<'src>,
-    right_to_dot: Digits<'src>,
-}
-
-impl<'src> Float<'src> {
-    pub fn to_f64(&self) -> f64 {
-        format!("{}.{}", self.left_to_dot, self.right_to_dot)
-            .parse()
-            .unwrap()
-    }
-}
-
-impl<'src> fmt::Display for Float<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", self.left_to_dot.str, self.right_to_dot)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct String<'src> {
-    str: &'src str,
-}
-impl<'src> fmt::Display for String<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}\"", self.str)
-    }
+pub enum WhiteSpace {
+    NewLine,
+    Space,
+    Tab,
 }
 
 #[cfg(test)]

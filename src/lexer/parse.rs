@@ -6,7 +6,7 @@ use nom::{
     error::{Error as NomError, ErrorKind as NomErrorKind},
     multi::many0,
     sequence::tuple,
-    Err as ErrorCase, IResult,
+    Err as ErrorCase,
 };
 
 use super::*;
@@ -14,11 +14,13 @@ use super::*;
 #[cfg(test)]
 mod test;
 
-pub fn tokens(input: &str) -> IResult<&str, Tokens<'_>> {
-    // NOTE: potentially slow because double loop
-    let token = map(token, |token| Some(token));
+type IResult<'a, O> = nom::IResult<&'a str, O>;
+type Input<'a> = &'a str;
+
+pub fn tokens(input: Input) -> IResult<Tokens<'_>> {
+    let token = map(token, |t| Some(t));
     let white_space = map(white_space, |_| None);
-    let (input, output) = many0(alt((token, white_space)))(input)?;
+    let (input, output) = many0(alt((white_space, token)))(input)?;
     Ok((
         input,
         Tokens {
@@ -27,62 +29,67 @@ pub fn tokens(input: &str) -> IResult<&str, Tokens<'_>> {
     ))
 }
 
-fn white_space(input: &str) -> IResult<&str, &str> {
+fn white_space(input: Input) -> IResult<&str> {
     take_while1(|c: char| matches!(c, ' ' | '\t' | '\r' | '\n'))(input)
 }
 
-fn token(input: &str) -> IResult<&str, Token<'_>> {
-    let identifier = map(identifier, Token::Identifier);
-    let literal = map(literal, Token::Literal);
-    let operator = map(operator, Token::Operator);
-    alt((identifier, literal, operator))(input)
+fn token(input: Input) -> IResult<Token<'_>> {
+    let invalid_token = map(take(1usize), |s: &str| Token::new(s, TokenKind::Invalid));
+    alt((identifier, literal, operator, invalid_token))(input)
 }
 
-fn operator(input: &str) -> IResult<&str, Operator> {
+fn operator(input: Input) -> IResult<Token<'_>> {
     // NOTE: potentially slow and invalid code with longer operator
     let (input, output) = take(1usize)(input)?;
     match Operator::recognize(output) {
-        Some(operator) => Ok((input, operator)),
+        Some(operator) => Ok((input, Token::new(output, TokenKind::Operator(operator)))),
         None => Err(ErrorCase::Error(NomError::new(input, NomErrorKind::Verify))),
     }
 }
 
-fn identifier(input: &str) -> IResult<&str, Identifier<'_>> {
+fn identifier(input: Input) -> IResult<Token<'_>> {
     let first_char_not_digit = |s: &str| {
         let first_char = s.as_bytes()[0] as char;
         !first_char.is_ascii_digit()
     };
     let char_alphanumeric_or_underscore = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    map(
-        verify(
-            take_while1(char_alphanumeric_or_underscore),
-            first_char_not_digit,
-        ),
-        |str: &str| Identifier { str },
-    )(input)
-}
-
-fn literal(input: &str) -> IResult<&str, Literal<'_>> {
-    let integer = map(digits, Literal::Digits);
-    let float = map(float, Literal::Float);
-    alt((float, integer))(input)
-}
-
-fn digits(input: &str) -> IResult<&str, Digits<'_>> {
-    map(take_while1(|c: char| c.is_ascii_digit()), |str: &str| {
-        Digits { str }
+    let identifier = verify(
+        take_while1(char_alphanumeric_or_underscore),
+        first_char_not_digit,
+    );
+    map(identifier, |str: &str| {
+        Token::new(str, TokenKind::Identifier)
     })(input)
 }
 
-fn float(input: &str) -> IResult<&str, Float<'_>> {
-    let pre_dot = digits;
-    let post_dot = digits;
-    let dot = verify(take(1usize), |s: &str| s == ".");
-    map(
-        tuple((pre_dot, dot, post_dot)),
-        |(pre_dot, _, post_dot): (Digits, &str, Digits)| Float {
-            left_to_dot: pre_dot,
-            right_to_dot: post_dot,
-        },
-    )(input)
+fn literal(input: Input) -> IResult<Token<'_>> {
+    alt((float, digits))(input)
+}
+
+fn digits(input: Input) -> IResult<Token<'_>> {
+    map(take_while1(|c: char| c.is_ascii_digit()), |str: &str| {
+        Token::new(str, TokenKind::Literal(Literal::Digits))
+    })(input)
+}
+
+fn dots_and_digits(input: Input) -> IResult<&str> {
+    take_while1(|c: char| c.is_ascii_digit() || c == '.')(input)
+}
+
+fn float(input: Input) -> IResult<Token<'_>> {
+    let float = verify(dots_and_digits, |s: &str| {
+        let mut dot_count = 0usize;
+        for char in s.chars() {
+            if char == '.' {
+                dot_count += 1;
+                if dot_count > 1 {
+                    return false;
+                }
+            }
+        }
+        dot_count == 1
+    });
+    map(float, |float| {
+        Token::new(float, TokenKind::Literal(Literal::Float))
+    })(input)
 }

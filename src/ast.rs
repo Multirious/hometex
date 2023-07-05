@@ -2,15 +2,15 @@ mod parse;
 
 type TS<'a, 'src> = &'a [crate::lexer::Token<'src>];
 
-struct EpicWrapper(*const crate::lexer::Token<'static>, usize);
+struct EpicWrapper(TS<'static, 'static>);
 
 impl EpicWrapper {
-    fn new<'a, 'src>(ts: TS<'a, 'src>) -> EpicWrapper {
-        EpicWrapper(ts.as_ptr(), ts.len())
+    fn epicify<'a, 'src>(ts: TS<'a, 'src>) -> EpicWrapper {
+        EpicWrapper(unsafe { std::slice::from_raw_parts(ts.as_ptr(), ts.len()) })
     }
 
     fn lmao<'a, 'src>(&'a self) -> TS<'a, 'src> {
-        unsafe { std::slice::from_raw_parts(self.0, self.1) }
+        self.0
     }
 }
 
@@ -36,7 +36,7 @@ pub struct Error {
 impl Error {
     pub fn new<'a, 'src>(input: TS<'a, 'src>) -> Error {
         Error {
-            input: EpicWrapper::new(input),
+            input: EpicWrapper::epicify(input),
         }
     }
 }
